@@ -1,0 +1,180 @@
+# Fairline Trading — example configuration.
+# Copy to config.yaml (gitignored) and edit. Secrets are read from environment
+# variables by NAME; never put key material in this file.
+
+paper_mode: true             # Simulated fills only. Real orders need paper_mode: false,
+                             # live.armed: true, AND the --live --arm flags.
+run_dir: "./run"             # SQLite logs and the STOP kill-switch file live here.
+
+# Real-money settings (used only when paper_mode is false and live.armed is true).
+live:
+  armed: false
+  bankroll_fraction: 0.10    # each order sized at 10% of the LIVE account balance
+  max_clip_dollars: 5.0      # hard dollar ceiling per order
+  daily_loss_limit_dollars: 8.0   # stop opening positions once the day's loss hits this
+  cross_buffer_cents: 2      # IOC orders cross the touch by this much so they actually fill
+  max_game_fraction: 0.35    # concentration cap: total cost basis in one game <= 35% of balance
+  reaction_clip_dollars: 3.0 # smaller clip for the reaction lane
+  reaction_max_per_game: 2   # reaction entries per game (counted within the per-game cap)
+heartbeat_seconds: 10
+min_liquidity_contracts: 50  # a trade must be fillable at >= this size
+
+# Optional sharp-book fair values. "none" keeps the totals-ladder model primary;
+# "goalserve" uses a de-vigged live bookmaker line instead.
+sharp_feed:
+  provider: "none"           # none | goalserve
+  api_key_env: "GOALSERVE_API_KEY"
+  poll_seconds: 1
+  fresh_seconds: 10          # sharp fair older than this falls back to the ladder model
+
+# Directional-asymmetry rules (after a goal, does the market over- or under-react
+# depending on who scored?). Goals are tagged in shadow; the rules stay off until
+# shadow data confirms the effect with enough events.
+asymmetry:
+  enabled: false
+  fade_favourite: false
+  longshot_late_buy: false
+  longshot_late_gap_cents: 7
+
+execution:
+  rest_verify_orders: true   # price every live order off a fresh REST snapshot of the
+                             # exchange book, not the local WebSocket copy (which can drift
+                             # without a sequence gap). Buys fail closed if the fetch fails.
+  block_on_dirty_book: true  # never trade a book marked stale after a WebSocket sequence gap
+  maker_enabled: false       # resting post-only entries; off until verified against the venue
+  maker_patience_seconds: 45
+
+# Post-goal sniper strategies. Shadow-logged on every goal (priced at the depth they
+# would really fill at); each class trades real money only when explicitly enabled.
+sniper:
+  enabled: false
+  class_a_enabled: false     # markets a goal has made mathematically certain
+  class_b_enabled: false     # markets repriced off a pre-goal scoring model
+  shadow: true
+  clip_dollars: 3.0
+  max_per_game: 2            # snipes use their own slot budget (the $ concentration cap still binds)
+  class_a_max_price: 93      # above ~93c, fees eat the edge
+  class_a_max_markets_per_goal: 3
+  class_b_min_gap_cents: 10
+  class_b_max_per_goal: 2
+  blacklist_seconds: 120     # no sniping a game for 120s after a VAR/score correction
+  spike_markets: 3           # >=3 markets of one game...
+  spike_move_cents: 8        # ...moving >=8c the same way...
+  spike_window_s: 2.0        # ...within 2s triggers an immediate score fetch
+
+# Live mode refuses to start if any of these is missing or <= 0.
+safety_gates:
+  max_plausible_edge_cents: 20   # a larger "edge" on a liquid market is treated as a data error
+  min_entry_price_cents: 15      # no entries below 15c (cheap longshots)
+  max_entry_price_cents: 90      # no entries above 90c (fees dominate)
+  max_contracts_per_clip: 150
+  max_entry_minute: 75           # no new entries late in the game
+  max_positions_per_game: 2      # limits correlated stacking on one game
+
+discover:
+  core_series: ["KXMLSGAME", "KXMLSSPREAD", "KXMLSTOTAL", "KXMLSTEAMTOTAL"]
+
+# Separate shadow-only strategy for daily weather markets (longshot_scan.py).
+# It has no order path at all.
+longshot:
+  clip_dollars: 3.0
+  max_yes_mid_cents: 10        # hard cap on how cheap a contract we'll fade
+  max_spread_cents: 5
+  max_no_ask_cents: 97
+  min_net_win_cents: 6
+  min_hours_to_close: 12       # enter well before the outcome is knowable
+  max_hours_to_close: 36
+  entry_windows:
+    KXHIGHNY:  {min_hours: 16, max_hours: 30}
+    KXHIGHCHI: {min_hours: 16, max_hours: 30}
+    KXHIGHMIA: {min_hours: 16, max_hours: 30}
+    KXHIGHAUS: {min_hours: 16, max_hours: 30}
+  series: ["KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS"]
+  max_per_event: 2
+  max_new_per_scan: 6
+  max_open_cost_dollars: 60.0
+  gates:                       # pre-registered arming thresholds (see engine/longshot.py)
+    min_settled: 150
+    min_events: 40
+    max_worst_day_frac_of_gross: 0.35
+    min_positive_series: 3
+
+kalshi:
+  rest_base: "https://api.elections.kalshi.com"
+  rest_prefix: "/trade-api/v2"
+  ws_url: "wss://api.elections.kalshi.com/trade-api/ws/v2"
+  ws_sign_path: "/trade-api/ws/v2"
+  api_key_id_env: "KALSHI_API_KEY_ID"
+  private_key_path_env: "KALSHI_PRIVATE_KEY_PATH"
+  rest_poll_seconds: 15
+
+anthropic:
+  api_key_env: "ANTHROPIC_API_KEY"
+  model: "claude-opus-4-8"
+  max_tokens: 4096
+
+# Markets to trade. Generate per slate: `python main.py --discover <GAME_CODE>`.
+market_tickers:
+  - "KXMLSGAME-26JUL22MIACHI-MIA"
+  - "KXMLSGAME-26JUL22MIACHI-TIE"
+  - "KXMLSGAME-26JUL22MIACHI-CHI"
+  - "KXMLSTOTAL-26JUL22MIACHI-2"
+  - "KXMLSTOTAL-26JUL22MIACHI-4"
+
+score_feed:
+  provider: "espn"
+  espn_league: "usa.1"         # ESPN league slug (World Cup: fifa.world, MLS: usa.1)
+  poll_seconds: 10
+  live_poll_seconds: 3         # faster while a mapped game is in play
+  event_map:                   # Kalshi ticker -> ESPN event id
+    "KXMLSGAME-26JUL22MIACHI-MIA": "761667"
+    "KXMLSGAME-26JUL22MIACHI-TIE": "761667"
+    "KXMLSGAME-26JUL22MIACHI-CHI": "761667"
+    "KXMLSTOTAL-26JUL22MIACHI-2": "761667"
+    "KXMLSTOTAL-26JUL22MIACHI-4": "761667"
+
+# Paper-mode simulation limits.
+risk:
+  bankroll: 1000.00
+  max_position_per_market: 100
+  max_total_exposure: 500.00
+  max_orders_per_min: 20
+
+fees:
+  rate_taker: 0.07             # taker fee = ceil(0.07 * C * P * (1-P))
+  rate_maker: 0.0175
+  series_overrides: {}
+
+analyst:
+  llm_refresh_seconds: 90
+  call_on_events: ["pregame", "goal", "red_card", "halftime", "fulltime"]
+
+engine:
+  default_order_size: 20
+  min_edge_cents: 9                # edge lane: required edge, well above round-trip fees
+  min_edge_after_fees_cents: 4
+  decided_moneyline_cents: 95      # any moneyline leg >= this means the game is decided
+  max_plausible_edge_cents: 0
+
+position_manager:
+  # Binary contracts settle on the final score, so a mid-game price dip is noise.
+  # Downside protection is the score-state exit plus position sizing.
+  price_exits_enabled: false
+  take_profit_enabled: false       # profit-taking comes from event-keyed exit rules instead
+  moneyline_late_minute: 80
+  take_profit_cents: 10
+  stop_loss_cents: 12
+  min_hold_ticks: 1                # an entry and its own exit can never fire in one tick
+
+safety:
+  max_score_age_s: 45              # stale score feed => no orders for that game
+  max_quote_drift_cents: 3         # drop a decision if the price moved more than this
+
+# Totals-ladder coherence gate: re-price over/under bets using the goal expectation the
+# market itself implies across sibling lines, and require real edge against THAT.
+totals_ladder:
+  enabled: true
+  edge_at_mid_cents: 9
+  edge_at_extreme_cents: 18
+
+context: {}

@@ -1,0 +1,30 @@
+# secrets — never commit
+.env
+secrets/
+*.pem
+*.key
+
+# runtime data: real-money trade history, balances, cashflows
+run/
+archive/
+*.sqlite
+*.sqlite-journal
+
+# private working notes (account details, manual trading, AI-assistant instructions)
+CLAUDE.md
+HANDOFF.md
+BOT-CONTEXT-HANDOFF.md
+WC2026-POST-MORTEM.md
+
+# environment / OS
+.venv/
+__pycache__/
+.DS_Store
+
+# live config (armed, today's board) — config.example.yaml is the public template
+config.yaml
+
+# logs and other local databases
+*.db
+*.log
+logs/

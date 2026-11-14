@@ -1,0 +1,7 @@
+# Python 3.9+
+cryptography>=42.0        # RSA-PSS request signing
+httpx>=0.27              # async REST client
+websockets>=12.0         # async WS client
+anthropic>=0.40          # LLM analyst (claude-opus-4-8)
+PyYAML>=6.0              # config
+python-dotenv>=1.0       # load .env so secrets stay out of shell history
